@@ -1,0 +1,25 @@
+interval: 5
+stats:
+    [
+        "layer_norm",
+        "neuron_norm",
+        "layer_grad_norm",
+        "neuron_grad_norm",
+        "layer_update_norm",
+        "neuron_update_norm",
+        "layer_angular_update",
+        "neuron_angular_update",
+        "layer_relative_update",
+        "neuron_relative_update",
+        "scalar_rms",
+        "scalar_update_rms",
+        "scalar_grad_rms",
+    ]
+
+disk_save_interval: null # Save f, null to disable
+disk_stats: all
+disk_max_channels: 16 # Max channels per layer saved
+disk_downsample: 10 #
+
+wandb_interval: 5
+wandb_stats: all

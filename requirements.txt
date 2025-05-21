@@ -1,0 +1,10 @@
+tiktoken
+torch=>=2.7.0
+tqdm==4.67.1
+fast-hadamard-transform
+schedulefree
+transformers
+wandb
+datasets
+zstandard
+scipy
