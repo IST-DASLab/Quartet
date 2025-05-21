@@ -1,6 +1,8 @@
 # Quartet: Native FP4 Training Can Be Optimal for Large Language Models
 
-[![arXiv](https://img.shields.io/badge/arXiv-1234.56789-b31b1b.svg)](https://arxiv.org/abs/2505.14669)
+This is the official code for the Quartet FP4 trainig paper [![arXiv](https://img.shields.io/badge/arXiv-1234.56789-b31b1b.svg)](https://arxiv.org/abs/2505.14669) 
+
+Currently, this is work in progress. We provide code for reproducing the accuracy experiments, and will release kernels for the performance experiments at a later time. 
 
 ## Quickstart 
 
