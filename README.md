@@ -30,3 +30,16 @@ The above command trains a 30M parameters model with the Llama-style architectur
 ## MXFP4 Kernels
 
 Coming soon...
+
+## Cite This Work
+```
+@misc{castro2025quartetnativefp4training,
+      title={Quartet: Native FP4 Training Can Be Optimal for Large Language Models}, 
+      author={Roberto L. Castro and Andrei Panferov and Soroush Tabesh and Oliver Sieberling and Jiale Chen and Mahdi Nikdan and Saleh Ashkboos and Dan Alistarh},
+      year={2025},
+      eprint={2505.14669},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG},
+      url={https://arxiv.org/abs/2505.14669}, 
+}
+```
