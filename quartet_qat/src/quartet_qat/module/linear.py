@@ -11,6 +11,7 @@ from qutlass.utils import to_blocked
 from fast_hadamard_transform import hadamard_transform
 
 from ..utils import QuartetDtype
+from .linear_fns import forward_quantize, QuartetMasterWeightsFn, QuartetNoMasterWeightsFn
 
 
 @dataclass
@@ -55,17 +56,6 @@ class QuartetLinear(nn.Linear):
             "backward_hadamard_matrix",
             torch.empty(self.config.hadamard_group_size, self.config.hadamard_group_size, dtype=self.weight.dtype, device=self.weight.device),
         )
-        
-    def forward_quantize(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        match self.config.forward_dtype:
-            case QuartetDtype.MXFP4:
-                x_hf_e2m1, x_hf_e8m0, _ = fusedQuantize(x, self.forward_hadamard_matrix)
-                shared_exps = to_blocked(x_hf_e8m0)
-                return x_hf_e2m1, shared_exps
-            case QuartetDtype.MXFP8:
-                raise NotImplementedError("MXFP8 is not supported for forward quantization yet")
-            case _:
-                raise ValueError(f"Unsupported forward dtype: {self.config.forward_dtype}")
     
     @torch.no_grad()
     def pre_forward(self):
@@ -90,7 +80,7 @@ class QuartetLinear(nn.Linear):
             self.weight_q = None
             self.shared_exponents = None
         else:
-            weight_q, shared_exponents = self.forward_quantize(self.weight)
+            weight_q, shared_exponents, _ = forward_quantize(self.weight, self.forward_hadamard_matrix, self.config.forward_dtype)
             self.weight_q.copy_(weight_q)
             self.shared_exponents.copy_(shared_exponents)
             self.weight = None
@@ -98,20 +88,12 @@ class QuartetLinear(nn.Linear):
     @torch.compile()
     @torch.inference_mode()
     def forward(self, x) -> torch.Tensor:
-        x_flat = x.contiguous().flatten(end_dim=-2)
-
-        # Quantize input
-        x_flat_q, x_flat_shared_exponents = self.forward_quantize(x_flat)
-
-        # Quantize weights
         if self.config.store_master_weights:
-            weight_q, shared_exponents = self.forward_quantize(self.weight)
+            return QuartetMasterWeightsFn.apply(
+                x, self.weight, self.bias, self.forward_hadamard_matrix, self.config.forward_dtype,
+            )
         else:
-            weight_q, shared_exponents = self.weight_q, self.shared_exponents
+            return QuartetNoMasterWeightsFn.apply(
+                x, self.weight_q, self.shared_exponents, self.bias, self.forward_hadamard_matrix, self.config.forward_dtype,
+            )
 
-        y = matmul_mxf4_bf16_tn(x_flat_q, weight_q, x_flat_shared_exponents, shared_exponents, 1.)
-        
-        y = y.unflatten(dim=0, sizes=x.shape[:-1])
-        if self.bias is not None:
-            y += self.bias
-        return y
