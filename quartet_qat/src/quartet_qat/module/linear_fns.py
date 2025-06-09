@@ -50,6 +50,7 @@ class QuartetMasterWeightsFn(Function):
         
         ctx.x_shape = x.shape
         ctx.dtype = dtype
+        ctx.bias_present = bias is not None
         ctx.save_for_backward(
             x_flat_q,
             weight_q,
@@ -98,7 +99,10 @@ class QuartetMasterWeightsFn(Function):
             (grad_weight_hf.view(-1, 32) * weight_mask.view(-1, 32).to(grad_weight_hf.dtype))
             @ forward_hadamard_matrix.T
         ).view(grad_output.size(-1), weight_q.size(-1) * 2)
-        return grad_input, grad_weight, None, None, None, None
+        
+        grad_bias = grad_output.flatten(end_dim=-2).sum(dim=0) if ctx.bias_present else None
+
+        return grad_input, grad_weight, grad_bias, None, None, None
 
 
 class QuartetNoMasterWeightsFn(Function):
@@ -118,6 +122,7 @@ class QuartetNoMasterWeightsFn(Function):
         
         ctx.x_shape = x.shape
         ctx.dtype = dtype
+        ctx.bias_present = bias is not None
         ctx.save_for_backward(
             weight_q,
             weight_shared_exponents,
@@ -151,5 +156,7 @@ class QuartetNoMasterWeightsFn(Function):
             (grad_input.view(-1, 32) * x_flat_mask.view(-1, 32).to(grad_input.dtype))
             @ forward_hadamard_matrix.T
         ).view(ctx.x_shape)
+        
+        grad_bias = grad_output.flatten(end_dim=-2).sum(dim=0) if ctx.bias_present else None
 
-        return grad_input, None, None, None, None, None, None
+        return grad_input, None, None, grad_bias, None, None, None
