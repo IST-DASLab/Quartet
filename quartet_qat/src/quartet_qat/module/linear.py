@@ -70,8 +70,7 @@ class QuartetLinear(nn.Linear):
             self.weight_q = nn.Parameter(weight_q, requires_grad=False)
             self.shared_exponents = nn.Parameter(shared_exponents, requires_grad=False)
             self.weight = None
-    
-    @torch.compile()
+
     def forward(self, x) -> torch.Tensor:
         if self.config.store_master_weights:
             return QuartetMasterWeightsFn.apply(
