@@ -1,29 +1,15 @@
-from dataclasses import dataclass
-from typing import Optional
-
 import torch
 from torch import nn
 import torch.nn.functional as F
 
-from qutlass import matmul_mxf4_bf16_tn, fusedQuantize
-from qutlass.utils import to_blocked
-
 from fast_hadamard_transform import hadamard_transform
 
-from ..utils import QuartetDtype
+from ..utils import QuartetDtype, QuartetConfig
 from .linear_fns import forward_quantize, QuartetMasterWeightsFn, QuartetNoMasterWeightsFn
 
 
-@dataclass
-class QuartetLinearConfig:
-    forward_dtype: QuartetDtype = QuartetDtype.MXFP4
-    backward_dtype: QuartetDtype = QuartetDtype.MXFP4
-    store_master_weights: bool = False
-    hadamard_group_size: int = 32
-
-
 class QuartetLinear(nn.Linear):
-    def __init__(self, *args, config: QuartetLinearConfig, **kwargs):
+    def __init__(self, *args, config: QuartetConfig, **kwargs):
         super().__init__(*args, **kwargs)
 
         self.config = config

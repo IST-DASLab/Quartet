@@ -1,1 +1,1 @@
-from .linear import QuartetLinearConfig, QuartetLinear
+from .linear import QuartetLinear

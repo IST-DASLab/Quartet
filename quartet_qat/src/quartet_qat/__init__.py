@@ -2,5 +2,5 @@
 quartet_qat: A Python package for quartet-qat
 """ 
 
-from .utils import QuartetDtype
-from .module import QuartetLinearConfig, QuartetLinear
+from .utils import QuartetDtype, replace_with_quartet_linear, QuartetConfig
+from .module import QuartetLinear

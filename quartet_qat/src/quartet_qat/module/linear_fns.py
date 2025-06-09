@@ -8,7 +8,7 @@ from qutlass import matmul_mxf4_bf16_tn, fusedQuantize, fusedQuantize_bwd
 from qutlass.utils import to_blocked
 import quartet
 
-from quartet_qat.utils.dtypes import QuartetDtype
+from ..utils import QuartetDtype
 
 
 @torch.compile()
