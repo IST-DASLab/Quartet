@@ -48,13 +48,13 @@ class QuartetLinear(nn.Linear):
         # Generate rotation matrices
         assert self.weight.shape[1] % self.config.hadamard_group_size == 0, "Weight shape must be divisible by hadamard group size"
         assert self.weight.data.is_cuda, "Weight must be on CUDA"
-        self.forward_hadamard_matrix.copy_(
+        self.forward_hadamard_matrix = nn.Parameter(
             hadamard_transform(
                 torch.eye(self.config.hadamard_group_size, dtype=self.weight.dtype, device=self.weight.device),
                 scale=self.config.hadamard_group_size ** -0.5,
             )
         )
-        self.backward_hadamard_matrix.copy_(
+        self.backward_hadamard_matrix = nn.Parameter(
             hadamard_transform(
                 torch.eye(self.config.hadamard_group_size, dtype=self.weight.dtype, device=self.weight.device),
                 scale=self.config.hadamard_group_size ** -0.5,
@@ -67,8 +67,8 @@ class QuartetLinear(nn.Linear):
             self.shared_exponents = None
         else:
             weight_q, shared_exponents, _ = forward_quantize(self.weight, self.forward_hadamard_matrix, self.config.forward_dtype)
-            self.weight_q.copy_(weight_q)
-            self.shared_exponents.copy_(shared_exponents)
+            self.weight_q = nn.Parameter(weight_q, requires_grad=False)
+            self.shared_exponents = nn.Parameter(shared_exponents, requires_grad=False)
             self.weight = None
     
     @torch.compile()

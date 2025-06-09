@@ -45,7 +45,7 @@ def replace_with_quartet_linear(
                     model._modules[name] = QuartetLinear(
                         in_features,
                         out_features,
-                        quartet_linear_config,
+                        config=quartet_linear_config,
                         bias=module.bias is not None,
                     )
                     has_been_replaced = True
