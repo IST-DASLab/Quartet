@@ -8,9 +8,20 @@ from ..utils import QuartetDtype, QuartetConfig
 from .linear_fns import forward_quantize, QuartetMasterWeightsFn, QuartetNoMasterWeightsFn
 
 
-class QuartetLinear(nn.Linear):
-    def __init__(self, *args, config: QuartetConfig, **kwargs):
-        super().__init__(*args, **kwargs)
+class QuartetLinear(nn.Module):
+    def __init__(self, in_features: int, out_features: int, config: QuartetConfig, bias: bool = True, device: torch.device = None, dtype: torch.dtype = None):
+        super().__init__()
+        
+        factory_kwargs = {"device": device, "dtype": dtype}
+        self.in_features = in_features
+        self.out_features = out_features
+        self.weight = nn.Parameter(
+            torch.empty((out_features, in_features), **factory_kwargs)
+        )
+        if bias:
+            self.bias = nn.Parameter(torch.empty(out_features, **factory_kwargs))
+        else:
+            self.register_parameter("bias", None)
 
         self.config = config
         

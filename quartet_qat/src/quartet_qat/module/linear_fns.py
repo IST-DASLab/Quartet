@@ -11,6 +11,30 @@ import quartet
 from ..utils import QuartetDtype
 
 
+@torch.library.custom_op("quartet::fused_quantize_op", mutates_args=())
+def fused_quantize_op(x_flat: torch.Tensor, hadamard_matrix: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    return fusedQuantize(x_flat, hadamard_matrix)
+
+
+@fused_quantize_op.register_fake
+def _(x_flat, hadamard_matrix):
+    return (
+        x_flat.new_empty(x_flat.shape[0], x_flat.shape[1] // 2, dtype=torch.uint8),
+        x_flat.new_empty(x_flat.shape[0], x_flat.shape[1] // 32, dtype=torch.uint8),
+        x_flat.new_empty(x_flat.shape[0], x_flat.shape[1] // 8, dtype=torch.uint8),
+    )
+
+
+@torch.library.custom_op("quartet::matmul_mxf4_bf16_tn", mutates_args=())
+def matmul_mxf4_bf16_tn_op(x: torch.Tensor, w: torch.Tensor, xs: torch.Tensor, ws: torch.Tensor, alpha: float) -> torch.Tensor:
+    return matmul_mxf4_bf16_tn(x, w, xs, ws, alpha)
+
+
+@matmul_mxf4_bf16_tn_op.register_fake
+def _(x, w, xs, ws, alpha):
+    return x.new_empty(*x.shape[:-1], w.shape[0])
+
+
 @torch.compile()
 @torch.inference_mode()
 def _unpack_mask(clip_mask: torch.Tensor) -> torch.Tensor:
@@ -23,7 +47,7 @@ def _unpack_mask(clip_mask: torch.Tensor) -> torch.Tensor:
 def forward_quantize(x: torch.Tensor, hadamard_matrix: torch.Tensor, dtype: QuartetDtype) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     match dtype:
         case QuartetDtype.MXFP4:
-            return fusedQuantize(x, hadamard_matrix)
+            return fused_quantize_op(x, hadamard_matrix)
         case QuartetDtype.MXFP8:
             raise NotImplementedError("MXFP8 is not supported for forward quantization yet")
         case _:
@@ -42,7 +66,7 @@ class QuartetMasterWeightsFn(Function):
         # Quantize weights
         weight_q, weight_scales, weight_mask = forward_quantize(weight, forward_hadamard_matrix, dtype)
 
-        y = matmul_mxf4_bf16_tn(x_flat_q, weight_q, to_blocked(x_flat_scales), to_blocked(weight_scales), 1.)
+        y = matmul_mxf4_bf16_tn_op(x_flat_q, weight_q, to_blocked(x_flat_scales), to_blocked(weight_scales), 1.)
         
         y = y.unflatten(dim=0, sizes=x.shape[:-1])
         if bias is not None:
@@ -80,7 +104,7 @@ class QuartetMasterWeightsFn(Function):
         )
 
         weight_qtq, weight_qt_scales = quartet.backward_qt_bf16(weight_q, weight_scales, backward_hadamard_matrix, alpha=1.)
-        grad_input = matmul_mxf4_bf16_tn(grad_output_q, weight_qtq, to_blocked(grad_output_scales), to_blocked(weight_qt_scales), 1. / 9.)
+        grad_input = matmul_mxf4_bf16_tn_op(grad_output_q, weight_qtq, to_blocked(grad_output_scales), to_blocked(weight_qt_scales), 1. / 9.)
 
         x_flat_mask = _unpack_mask(x_flat_mask)
         grad_input = (
@@ -92,7 +116,7 @@ class QuartetMasterWeightsFn(Function):
         x_flat_qtq, x_flat_qt_scales = quartet.backward_qt_bf16(x_flat_q, x_flat_scales, backward_hadamard_matrix, alpha=1.)
         grad_output_t_scales = to_blocked(grad_output_t_scales)
         x_flat_qt_scales = to_blocked(x_flat_qt_scales)
-        grad_weight_hf = matmul_mxf4_bf16_tn(grad_output_tq, x_flat_qtq, grad_output_t_scales, x_flat_qt_scales, 1. / 9.)
+        grad_weight_hf = matmul_mxf4_bf16_tn_op(grad_output_tq, x_flat_qtq, grad_output_t_scales, x_flat_qt_scales, 1. / 9.)
 
         weight_mask = _unpack_mask(weight_mask)
         grad_weight = (
@@ -114,7 +138,7 @@ class QuartetNoMasterWeightsFn(Function):
         # Quantize input
         x_flat_q, x_flat_scales, x_flat_mask = forward_quantize(x_flat, forward_hadamard_matrix, dtype)
 
-        y = matmul_mxf4_bf16_tn(x_flat_q, weight_q, to_blocked(x_flat_scales), to_blocked(weight_scales), 1.)
+        y = matmul_mxf4_bf16_tn_op(x_flat_q, weight_q, to_blocked(x_flat_scales), to_blocked(weight_scales), 1.)
         
         y = y.unflatten(dim=0, sizes=x.shape[:-1])
         if bias is not None:
@@ -149,7 +173,7 @@ class QuartetNoMasterWeightsFn(Function):
         )
 
         weight_qtq, weight_qt_scales = quartet.backward_qt_bf16(weight_q, weight_scales, backward_hadamard_matrix, alpha=1.)
-        grad_input = matmul_mxf4_bf16_tn(grad_output_q, weight_qtq, to_blocked(grad_output_scales), to_blocked(weight_qt_scales), 1. / 9.)
+        grad_input = matmul_mxf4_bf16_tn_op(grad_output_q, weight_qtq, to_blocked(grad_output_scales), to_blocked(weight_qt_scales), 1. / 9.)
 
         x_flat_mask = _unpack_mask(x_flat_mask)
         grad_input = (
