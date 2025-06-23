@@ -37,12 +37,12 @@ class QuartetMasterWeightsFn(Function):
         x_flat = x.contiguous().flatten(end_dim=-2)
 
         # Quantize input
-        x_flat_q, x_flat_shared_exponents, x_flat_mask = forward_quantize(x_flat, forward_hadamard_matrix, dtype)
+        x_flat_q, x_flat_scales, x_flat_mask = forward_quantize(x_flat, forward_hadamard_matrix, dtype)
 
         # Quantize weights
-        weight_q, weight_shared_exponents, weight_mask = forward_quantize(weight, forward_hadamard_matrix, dtype)
+        weight_q, weight_scales, weight_mask = forward_quantize(weight, forward_hadamard_matrix, dtype)
 
-        y = matmul_mxf4_bf16_tn(x_flat_q, weight_q, to_blocked(x_flat_shared_exponents), to_blocked(weight_shared_exponents), 1.)
+        y = matmul_mxf4_bf16_tn(x_flat_q, weight_q, to_blocked(x_flat_scales), to_blocked(weight_scales), 1.)
         
         y = y.unflatten(dim=0, sizes=x.shape[:-1])
         if bias is not None:
@@ -54,8 +54,8 @@ class QuartetMasterWeightsFn(Function):
         ctx.save_for_backward(
             x_flat_q,
             weight_q,
-            x_flat_shared_exponents,
-            weight_shared_exponents,
+            x_flat_scales,
+            weight_scales,
             x_flat_mask,
             weight_mask,
             forward_hadamard_matrix,
@@ -67,20 +67,20 @@ class QuartetMasterWeightsFn(Function):
     @staticmethod
     @torch.compile()
     def backward(ctx, grad_output: torch.Tensor):
-        x_flat_q, weight_q, x_flat_shared_exponents, weight_shared_exponents, x_flat_mask, weight_mask, forward_hadamard_matrix, backward_hadamard_matrix = ctx.saved_tensors
+        x_flat_q, weight_q, x_flat_scales, weight_scales, x_flat_mask, weight_mask, forward_hadamard_matrix, backward_hadamard_matrix = ctx.saved_tensors
 
         backward_hadamard_matrix = backward_hadamard_matrix * (
             torch.randint(0, 2, (32,), device=backward_hadamard_matrix.device, dtype=backward_hadamard_matrix.dtype)
             * 2. - 1.
         )
 
-        grad_output_q, grad_output_shared_exponents = fusedQuantize_bwd(
+        grad_output_q, grad_output_scales = fusedQuantize_bwd(
             grad_output.flatten(end_dim=-2),
             backward_hadamard_matrix
         )
 
-        weight_qtq, weight_qt_shared_exponents = quartet.backward_qt_bf16(weight_q, weight_shared_exponents, backward_hadamard_matrix, alpha=1.)
-        grad_input = matmul_mxf4_bf16_tn(grad_output_q, weight_qtq, to_blocked(grad_output_shared_exponents), to_blocked(weight_qt_shared_exponents), 1. / 9.)
+        weight_qtq, weight_qt_scales = quartet.backward_qt_bf16(weight_q, weight_scales, backward_hadamard_matrix, alpha=1.)
+        grad_input = matmul_mxf4_bf16_tn(grad_output_q, weight_qtq, to_blocked(grad_output_scales), to_blocked(weight_qt_scales), 1. / 9.)
 
         x_flat_mask = _unpack_mask(x_flat_mask)
         grad_input = (
@@ -88,11 +88,11 @@ class QuartetMasterWeightsFn(Function):
             @ forward_hadamard_matrix.T
         ).view(ctx.x_shape)
 
-        grad_output_tq, grad_output_t_shared_exponents = quartet.backward_t_bf16(grad_output.flatten(end_dim=-2), backward_hadamard_matrix)
-        x_flat_qtq, x_flat_qt_shared_exponents = quartet.backward_qt_bf16(x_flat_q, x_flat_shared_exponents, backward_hadamard_matrix, alpha=1.)
-        grad_output_t_shared_exponents = to_blocked(grad_output_t_shared_exponents)
-        x_flat_qt_shared_exponents = to_blocked(x_flat_qt_shared_exponents)
-        grad_weight_hf = matmul_mxf4_bf16_tn(grad_output_tq, x_flat_qtq, grad_output_t_shared_exponents, x_flat_qt_shared_exponents, 1. / 9.)
+        grad_output_tq, grad_output_t_scales = quartet.backward_t_bf16(grad_output.flatten(end_dim=-2), backward_hadamard_matrix)
+        x_flat_qtq, x_flat_qt_scales = quartet.backward_qt_bf16(x_flat_q, x_flat_scales, backward_hadamard_matrix, alpha=1.)
+        grad_output_t_scales = to_blocked(grad_output_t_scales)
+        x_flat_qt_scales = to_blocked(x_flat_qt_scales)
+        grad_weight_hf = matmul_mxf4_bf16_tn(grad_output_tq, x_flat_qtq, grad_output_t_scales, x_flat_qt_scales, 1. / 9.)
 
         weight_mask = _unpack_mask(weight_mask)
         grad_weight = (
@@ -108,13 +108,13 @@ class QuartetMasterWeightsFn(Function):
 class QuartetNoMasterWeightsFn(Function):
     @staticmethod
     @torch.compile()
-    def forward(ctx, x: torch.Tensor, weight_q: torch.Tensor, weight_shared_exponents: torch.Tensor, bias: Optional[torch.Tensor], forward_hadamard_matrix: torch.Tensor, backward_hadamard_matrix: torch.Tensor, dtype: QuartetDtype):
+    def forward(ctx, x: torch.Tensor, weight_q: torch.Tensor, weight_scales: torch.Tensor, bias: Optional[torch.Tensor], forward_hadamard_matrix: torch.Tensor, backward_hadamard_matrix: torch.Tensor, dtype: QuartetDtype):
         x_flat = x.contiguous().flatten(end_dim=-2)
 
         # Quantize input
-        x_flat_q, x_flat_shared_exponents, x_flat_mask = forward_quantize(x_flat, forward_hadamard_matrix, dtype)
+        x_flat_q, x_flat_scales, x_flat_mask = forward_quantize(x_flat, forward_hadamard_matrix, dtype)
 
-        y = matmul_mxf4_bf16_tn(x_flat_q, weight_q, to_blocked(x_flat_shared_exponents), to_blocked(weight_shared_exponents), 1.)
+        y = matmul_mxf4_bf16_tn(x_flat_q, weight_q, to_blocked(x_flat_scales), to_blocked(weight_scales), 1.)
         
         y = y.unflatten(dim=0, sizes=x.shape[:-1])
         if bias is not None:
@@ -125,7 +125,7 @@ class QuartetNoMasterWeightsFn(Function):
         ctx.bias_present = bias is not None
         ctx.save_for_backward(
             weight_q,
-            weight_shared_exponents,
+            weight_scales,
             x_flat_mask,
             forward_hadamard_matrix,
             backward_hadamard_matrix,
@@ -136,20 +136,20 @@ class QuartetNoMasterWeightsFn(Function):
     @staticmethod
     @torch.compile()
     def backward(ctx, grad_output: torch.Tensor):
-        weight_q, weight_shared_exponents, x_flat_mask, forward_hadamard_matrix, backward_hadamard_matrix = ctx.saved_tensors
+        weight_q, weight_scales, x_flat_mask, forward_hadamard_matrix, backward_hadamard_matrix = ctx.saved_tensors
 
         backward_hadamard_matrix = backward_hadamard_matrix * (
             torch.randint(0, 2, (32,), device=backward_hadamard_matrix.device, dtype=backward_hadamard_matrix.dtype)
             * 2. - 1.
         )
 
-        grad_output_q, grad_output_shared_exponents = fusedQuantize_bwd(
+        grad_output_q, grad_output_scales = fusedQuantize_bwd(
             grad_output.flatten(end_dim=-2),
             backward_hadamard_matrix
         )
 
-        weight_qtq, weight_qt_shared_exponents = quartet.backward_qt_bf16(weight_q, weight_shared_exponents, backward_hadamard_matrix, alpha=1.)
-        grad_input = matmul_mxf4_bf16_tn(grad_output_q, weight_qtq, to_blocked(grad_output_shared_exponents), to_blocked(weight_qt_shared_exponents), 1. / 9.)
+        weight_qtq, weight_qt_scales = quartet.backward_qt_bf16(weight_q, weight_scales, backward_hadamard_matrix, alpha=1.)
+        grad_input = matmul_mxf4_bf16_tn(grad_output_q, weight_qtq, to_blocked(grad_output_scales), to_blocked(weight_qt_scales), 1. / 9.)
 
         x_flat_mask = _unpack_mask(x_flat_mask)
         grad_input = (

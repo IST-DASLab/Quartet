@@ -29,8 +29,8 @@ class QuartetLinear(nn.Linear):
             case _:
                 raise ValueError(f"Unsupported forward dtype: {config.forward_dtype}")
         self.register_buffer(
-            "shared_exponents",
-            torch.empty(self.weight.shape[0], self.weight.shape[1] // 32, dtype=torch.float8_e8m0fnu, device=self.weight.device),
+            "scales",
+            torch.empty(self.weight.shape[0], self.weight.shape[1] // 32, dtype=torch.uint8, device=self.weight.device),
         )
         
         # Rotation matrices buffers
@@ -64,11 +64,11 @@ class QuartetLinear(nn.Linear):
         # Quantize weights
         if self.config.store_master_weights:
             self.weight_q = None
-            self.shared_exponents = None
+            self.scales = None
         else:
-            weight_q, shared_exponents, _ = forward_quantize(self.weight, self.forward_hadamard_matrix, self.config.forward_dtype)
+            weight_q, scales, _ = forward_quantize(self.weight, self.forward_hadamard_matrix, self.config.forward_dtype)
             self.weight_q = nn.Parameter(weight_q, requires_grad=False)
-            self.shared_exponents = nn.Parameter(shared_exponents, requires_grad=False)
+            self.scales = nn.Parameter(scales.view(dtype=torch.uint8), requires_grad=False)
             self.weight = None
 
     def forward(self, x) -> torch.Tensor:
@@ -78,6 +78,6 @@ class QuartetLinear(nn.Linear):
             )
         else:
             return QuartetNoMasterWeightsFn.apply(
-                x, self.weight_q, self.shared_exponents, self.bias, self.forward_hadamard_matrix, self.backward_hadamard_matrix, self.config.forward_dtype,
+                x, self.weight_q, self.scales, self.bias, self.forward_hadamard_matrix, self.backward_hadamard_matrix, self.config.forward_dtype,
             )
 
