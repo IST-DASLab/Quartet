@@ -5,7 +5,12 @@ import torch.nn.functional as F
 from fast_hadamard_transform import hadamard_transform
 
 from ..utils import QuartetDtype, QuartetConfig
-from .linear_fns import forward_quantize, QuartetMasterWeightsFn, QuartetNoMasterWeightsFn
+from .linear_fns import (
+    forward_quantize,
+    Quartet4x4MasterFn,
+    Quartet4x4NoMasterFn,
+    Quartet4x16MasterFn,
+)
 
 
 class QuartetLinear(nn.Module):
@@ -29,12 +34,12 @@ class QuartetLinear(nn.Module):
         match self.config.forward_dtype:
             case QuartetDtype.MXFP4:
                 self.register_buffer(
-                    "weight_q",
+                    "qweight",
                     torch.empty(self.weight.shape[0], self.weight.shape[1] // 2, dtype=torch.uint8, device=self.weight.device),
                 )
             case QuartetDtype.MXFP8:
                 self.register_buffer(
-                    "weight_q",
+                    "qweight",
                     torch.empty(*self.weight.shape, dtype=torch.uint8, device=self.weight.device),
                 )
             case _:
@@ -74,21 +79,27 @@ class QuartetLinear(nn.Module):
         
         # Quantize weights
         if self.config.store_master_weights:
-            self.weight_q = None
+            self.qweight = None
             self.scales = None
         else:
             weight_q, scales, _ = forward_quantize(self.weight, self.forward_hadamard_matrix, self.config.forward_dtype)
-            self.weight_q = nn.Parameter(weight_q, requires_grad=False)
+            self.qweight = nn.Parameter(weight_q, requires_grad=False)
             self.scales = nn.Parameter(scales.view(dtype=torch.uint8), requires_grad=False)
             self.weight = None
 
     def forward(self, x) -> torch.Tensor:
-        if self.config.store_master_weights:
-            return QuartetMasterWeightsFn.apply(
-                x, self.weight, self.bias, self.forward_hadamard_matrix, self.backward_hadamard_matrix, self.config.forward_dtype,
-            )
-        else:
-            return QuartetNoMasterWeightsFn.apply(
-                x, self.weight_q, self.scales, self.bias, self.forward_hadamard_matrix, self.backward_hadamard_matrix, self.config.forward_dtype,
-            )
-
+        match (self.config.forward_dtype, self.config.backward_dtype, self.config.store_master_weights):
+            case (QuartetDtype.MXFP4, QuartetDtype.MXFP4, True):
+                return Quartet4x4MasterFn.apply(
+                    x, self.weight, self.bias, self.forward_hadamard_matrix, self.backward_hadamard_matrix, self.config.forward_dtype,
+                )
+            case (QuartetDtype.MXFP4, QuartetDtype.MXFP4, False):
+                return Quartet4x4NoMasterFn.apply(
+                    x, self.qweight, self.scales, self.bias, self.forward_hadamard_matrix, self.backward_hadamard_matrix, self.config.forward_dtype,
+                )
+            case (QuartetDtype.MXFP4, QuartetDtype.BF16, True):
+                return Quartet4x16MasterFn.apply(
+                    x, self.weight, self.bias, self.forward_hadamard_matrix, self.config.forward_dtype,
+                )
+            case _:
+                raise ValueError(f"Forward dtype: {self.config.forward_dtype}, backward dtype: {self.config.backward_dtype}, store_master_weights: {self.config.store_master_weights} isn't supported yet.")

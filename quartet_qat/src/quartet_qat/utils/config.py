@@ -5,6 +5,7 @@ from enum import Enum
 class QuartetDtype(Enum):
     MXFP8 = "mxfp8"
     MXFP4 = "mxfp4"
+    BF16 = "bf16"
 
 @dataclass
 class QuartetConfig:
