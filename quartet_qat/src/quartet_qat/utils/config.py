@@ -10,6 +10,7 @@ class QuartetDtype(Enum):
 @dataclass
 class QuartetConfig:
     forward_dtype: QuartetDtype = QuartetDtype.MXFP4
+    forward_quest: bool = False
     backward_dtype: QuartetDtype = QuartetDtype.MXFP4
     store_master_weights: bool = False
     hadamard_group_size: int = 32

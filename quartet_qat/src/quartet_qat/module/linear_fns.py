@@ -4,7 +4,7 @@ import torch
 from torch import nn
 from torch.autograd import Function
 
-from qutlass import matmul_mxf4_bf16_tn, fusedQuantize, fusedQuantize_bwd
+from qutlass import matmul_mxf4_bf16_tn, fusedQuantizeMx
 from qutlass.utils import to_blocked
 import quartet
 
@@ -12,18 +12,19 @@ from ..utils import QuartetDtype
 
 
 @torch.library.custom_op("quartet::fused_quantize_op", mutates_args=())
-def fused_quantize_op(x_flat: torch.Tensor, hadamard_matrix: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+def fused_quantize_mx_op(x_flat: torch.Tensor, hadamard_matrix: torch.Tensor, quest: bool) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     if x_flat.shape[-1] % 32 != 0:
         raise ValueError(f"x_flat.shape[-1] % 32 != 0: {x_flat.shape}")
-    return fusedQuantize(x_flat, hadamard_matrix)
+    qweight, scales = fusedQuantizeMx(x_flat, hadamard_matrix)
+    return qweight, scales, None
 
 
-@fused_quantize_op.register_fake
-def _(x_flat, hadamard_matrix):
+@fused_quantize_mx_op.register_fake
+def _(x_flat, hadamard_matrix, quest):
     return (
         x_flat.new_empty(x_flat.shape[0], x_flat.shape[1] // 2, dtype=torch.uint8),
         x_flat.new_empty(x_flat.shape[0], x_flat.shape[1] // 32, dtype=torch.uint8),
-        x_flat.new_empty(x_flat.shape[0], x_flat.shape[1] // 8, dtype=torch.uint8),
+        x_flat.new_empty(x_flat.shape[0], x_flat.shape[1] // 8, dtype=torch.uint8) if quest else None,
     )
 
 
@@ -31,7 +32,7 @@ def _(x_flat, hadamard_matrix):
 def matmul_mxf4_bf16_tn_op(x: torch.Tensor, w: torch.Tensor, xs: torch.Tensor, ws: torch.Tensor, alpha: float) -> torch.Tensor:
     if x.shape[-1] % 32 != 0:
         raise ValueError(f"x.shape[-1] % 32 != 0: {x.shape}")
-    return matmul_mxf4_bf16_tn(x, w, xs, ws, alpha)
+    return matmul_mxf4_bf16_tn(x, w, xs.view(torch.float8_e8m0fnu), ws.view(torch.float8_e8m0fnu), alpha)
 
 
 @matmul_mxf4_bf16_tn_op.register_fake
@@ -42,12 +43,12 @@ def _(x, w, xs, ws, alpha):
 FP4_GRID = torch.tensor([
     0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0,
     -0.0, -0.5, -1.0, -1.5, -2.0, -3.0, -4.0, -6.0,
-], device="cuda", dtype=torch.bfloat16)
+], dtype=torch.bfloat16)
 
 
 def dequantize_mxf4_bf16(xq: torch.Tensor, exps: torch.Tensor) -> torch.Tensor:
     xq_unpacked = torch.stack([xq&0xF, xq>>4], dim=-1).to(torch.int32)
-    x_dequantized = FP4_GRID[xq_unpacked]
+    x_dequantized = FP4_GRID.to(xq.device)[xq_unpacked]
     
     float_exps = 2**(exps.view(dtype=torch.uint8).to(torch.int32) - 127).to(torch.bfloat16)
     return (x_dequantized.view(-1, 32) * float_exps.view(-1, 1)).view(*xq.shape[:-1], -1)
@@ -62,10 +63,10 @@ def _unpack_mask(clip_mask: torch.Tensor) -> torch.Tensor:
     return clip_mask_unpacked_dq
 
 
-def forward_quantize(x: torch.Tensor, hadamard_matrix: torch.Tensor, dtype: QuartetDtype) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+def forward_quantize(x: torch.Tensor, hadamard_matrix: torch.Tensor, dtype: QuartetDtype, quest: bool) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     match dtype:
         case QuartetDtype.MXFP4:
-            return fused_quantize_op(x, hadamard_matrix)
+            return fused_quantize_mx_op(x, hadamard_matrix, quest)
         case QuartetDtype.MXFP8:
             raise NotImplementedError("MXFP8 is not supported for forward quantization yet")
         case _:
@@ -75,14 +76,14 @@ def forward_quantize(x: torch.Tensor, hadamard_matrix: torch.Tensor, dtype: Quar
 class Quartet4x4MasterFn(Function):
     @staticmethod
     # @torch.compile()
-    def forward(ctx, x: torch.Tensor, weight: torch.Tensor, bias: Optional[torch.Tensor], forward_hadamard_matrix: torch.Tensor, backward_hadamard_matrix: torch.Tensor, dtype: QuartetDtype):
+    def forward(ctx, x: torch.Tensor, weight: torch.Tensor, bias: Optional[torch.Tensor], forward_hadamard_matrix: torch.Tensor, backward_hadamard_matrix: torch.Tensor, dtype: QuartetDtype, quest: bool):
         x_flat = x.contiguous().flatten(end_dim=-2)
 
         # Quantize input
-        x_flat_q, x_flat_scales, x_flat_mask = forward_quantize(x_flat, forward_hadamard_matrix, dtype)
+        x_flat_q, x_flat_scales, x_flat_mask = forward_quantize(x_flat, forward_hadamard_matrix, dtype, quest)
 
         # Quantize weights
-        weight_q, weight_scales, weight_mask = forward_quantize(weight, forward_hadamard_matrix, dtype)
+        weight_q, weight_scales, weight_mask = forward_quantize(weight, forward_hadamard_matrix, dtype, quest)
 
         y = matmul_mxf4_bf16_tn_op(x_flat_q, weight_q, to_blocked(x_flat_scales), to_blocked(weight_scales), 1. / 9.)
         
@@ -109,6 +110,7 @@ class Quartet4x4MasterFn(Function):
     @staticmethod
     # @torch.compile()
     def backward(ctx, grad_output: torch.Tensor):
+        raise NotImplementedError("Backward pass is not implemented for Quartet4x4MasterFn yet")
         x_flat_q, weight_q, x_flat_scales, weight_scales, x_flat_mask, weight_mask, forward_hadamard_matrix, backward_hadamard_matrix = ctx.saved_tensors
 
         backward_hadamard_matrix = backward_hadamard_matrix * (
@@ -148,11 +150,11 @@ class Quartet4x4MasterFn(Function):
 class Quartet4x4NoMasterFn(Function):
     @staticmethod
     # @torch.compile()
-    def forward(ctx, x: torch.Tensor, weight_q: torch.Tensor, weight_scales: torch.Tensor, bias: Optional[torch.Tensor], forward_hadamard_matrix: torch.Tensor, backward_hadamard_matrix: torch.Tensor, dtype: QuartetDtype):
+    def forward(ctx, x: torch.Tensor, weight_q: torch.Tensor, weight_scales: torch.Tensor, bias: Optional[torch.Tensor], forward_hadamard_matrix: torch.Tensor, backward_hadamard_matrix: torch.Tensor, dtype: QuartetDtype, quest: bool):
         x_flat = x.contiguous().flatten(end_dim=-2)
 
         # Quantize input
-        x_flat_q, x_flat_scales, x_flat_mask = forward_quantize(x_flat, forward_hadamard_matrix, dtype)
+        x_flat_q, x_flat_scales, x_flat_mask = forward_quantize(x_flat, forward_hadamard_matrix, dtype, quest)
 
         y = matmul_mxf4_bf16_tn_op(x_flat_q, weight_q, to_blocked(x_flat_scales), to_blocked(weight_scales), 1. / 9.)
         
@@ -176,6 +178,7 @@ class Quartet4x4NoMasterFn(Function):
     @staticmethod
     # @torch.compile()
     def backward(ctx, grad_output: torch.Tensor):
+        raise NotImplementedError("Backward pass is not implemented for Quartet4x4NoMasterFn yet")
         weight_q, weight_scales, x_flat_mask, forward_hadamard_matrix, backward_hadamard_matrix = ctx.saved_tensors
 
         backward_hadamard_matrix = backward_hadamard_matrix * (
@@ -205,14 +208,14 @@ class Quartet4x4NoMasterFn(Function):
 class Quartet4x16MasterFn(Function):
     @staticmethod
     # @torch.compile()
-    def forward(ctx, x: torch.Tensor, weight: torch.Tensor, bias: Optional[torch.Tensor], forward_hadamard_matrix: torch.Tensor, dtype: QuartetDtype):
+    def forward(ctx, x: torch.Tensor, weight: torch.Tensor, bias: Optional[torch.Tensor], forward_hadamard_matrix: torch.Tensor, dtype: QuartetDtype, quest: bool):
         x_flat = x.contiguous().flatten(end_dim=-2)
 
         # Quantize input
-        x_flat_q, x_flat_scales, x_flat_mask = forward_quantize(x_flat, forward_hadamard_matrix, dtype)
+        x_flat_q, x_flat_scales, x_flat_mask = forward_quantize(x_flat, forward_hadamard_matrix, dtype, quest)
 
         # Quantize weights
-        weight_q, weight_scales, weight_mask = forward_quantize(weight, forward_hadamard_matrix, dtype)
+        weight_q, weight_scales, weight_mask = forward_quantize(weight, forward_hadamard_matrix, dtype, quest)
 
         y = matmul_mxf4_bf16_tn_op(x_flat_q, weight_q, to_blocked(x_flat_scales), to_blocked(weight_scales), 1. / 9.)
         
