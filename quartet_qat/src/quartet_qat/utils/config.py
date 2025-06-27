@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import Literal
 
 
 class QuartetDtype(Enum):
@@ -7,10 +8,12 @@ class QuartetDtype(Enum):
     MXFP4 = "mxfp4"
     BF16 = "bf16"
 
+QuantMethod = Literal["quest", "abs_max"]
+
 @dataclass
 class QuartetConfig:
     forward_dtype: QuartetDtype = QuartetDtype.MXFP4
-    forward_quest: bool = False
+    forward_method: QuantMethod = "quest"
     backward_dtype: QuartetDtype = QuartetDtype.MXFP4
     store_master_weights: bool = False
     hadamard_group_size: int = 32

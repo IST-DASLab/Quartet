@@ -82,7 +82,7 @@ class QuartetLinear(nn.Module):
             self.qweight = None
             self.scales = None
         else:
-            weight_q, scales, _ = forward_quantize(self.weight, self.forward_hadamard_matrix, self.config.forward_dtype, self.config.forward_quest)
+            weight_q, scales, _ = forward_quantize(self.weight, self.forward_hadamard_matrix, self.config.forward_dtype, self.config.forward_method)
             self.qweight = nn.Parameter(weight_q, requires_grad=False)
             self.scales = nn.Parameter(scales.view(dtype=torch.uint8), requires_grad=False)
             self.weight = None
@@ -91,15 +91,15 @@ class QuartetLinear(nn.Module):
         match (self.config.forward_dtype, self.config.backward_dtype, self.config.store_master_weights):
             case (QuartetDtype.MXFP4, QuartetDtype.MXFP4, True):
                 return Quartet4x4MasterFn.apply(
-                    x, self.weight, self.bias, self.forward_hadamard_matrix, self.backward_hadamard_matrix, self.config.forward_dtype, self.config.forward_quest,
+                    x, self.weight, self.bias, self.forward_hadamard_matrix, self.backward_hadamard_matrix, self.config.forward_dtype, self.config.forward_method,
                 )
             case (QuartetDtype.MXFP4, QuartetDtype.MXFP4, False):
                 return Quartet4x4NoMasterFn.apply(
-                    x, self.qweight, self.scales, self.bias, self.forward_hadamard_matrix, self.backward_hadamard_matrix, self.config.forward_dtype, self.config.forward_quest,
+                    x, self.qweight, self.scales, self.bias, self.forward_hadamard_matrix, self.backward_hadamard_matrix, self.config.forward_dtype, self.config.forward_method,
                 )
             case (QuartetDtype.MXFP4, QuartetDtype.BF16, True):
                 return Quartet4x16MasterFn.apply(
-                    x, self.weight, self.bias, self.forward_hadamard_matrix, self.config.forward_dtype, self.config.forward_quest,
+                    x, self.weight, self.bias, self.forward_hadamard_matrix, self.config.forward_dtype, self.config.forward_method,
                 )
             case _:
                 raise ValueError(f"Forward dtype: {self.config.forward_dtype}, backward dtype: {self.config.backward_dtype}, store_master_weights: {self.config.store_master_weights} isn't supported yet.")
