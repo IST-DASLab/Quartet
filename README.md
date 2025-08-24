@@ -1,8 +1,12 @@
 # Quartet: Native FP4 Training Can Be Optimal for Large Language Models
 
-This is the official code for the Quartet FP4 training paper [![arXiv](https://img.shields.io/badge/arXiv-1234.56789-b31b1b.svg)](https://arxiv.org/abs/2505.14669) 
+This is the official code for the Quartet FP4 training paper [![arXiv](https://img.shields.io/badge/arXiv-2505.14669-b31b1b.svg)](https://arxiv.org/abs/2505.14669) 
 
-Currently, this repository is work in progress. We provide code for reproducing the accuracy experiments, and will release kernels for the performance experiments at a later time. 
+**[UPDATE 28.09.25]:** Quartet has been accepted to NeurIPS 2025!
+
+**[UPDATE 28.09.25]:** Check out our [latest work on MXFP4/NVFP4 for PTQ](https://arxiv.org/abs/2509.23202).
+
+This work was presented at the GPU MODE lecture cycle [![YouTube](https://img.shields.io/badge/YouTube-%23FF0000.svg?style=for-the-badge&logo=YouTube&logoColor=white)](https://www.youtube.com/watch?v=XVo17Q7YapA)
 
 ## Quickstart 
 
@@ -29,7 +33,11 @@ The above command trains a 30M parameters model with the Llama-style architectur
 
 ## MXFP4 Kernels
 
-Coming soon...
+Quartet kernels are released as part of the [QuTLASS](https://github.com/IST-DASLab/qutlass) library and the [FP-Quant](https://github.com/IST-DASLab/FP-Quant) training/inference addon to [`transformers`](https://huggingface.co/docs/transformers/main/en/quantization/fp_quant) and [`vLLM`](https://github.com/vllm-project/vllm/pull/24440).
+
+To measure the speedups on RTX 5090, install [this QuTLASS commit](https://github.com/IST-DASLab/qutlass/commit/66e0d48acb35dba35d6653e86955566a458b7d3d) and run [this notebook](notebooks/benchmark_mxfp4.ipynb).
+
+QuTLASS also provides certain kernels for B200 and we're working on a B300 implementation as well.
 
 ## Cite This Work
 ```
