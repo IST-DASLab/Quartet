@@ -2,7 +2,9 @@
 
 This is the official code for the Quartet FP4 training paper [![arXiv](https://img.shields.io/badge/arXiv-1234.56789-b31b1b.svg)](https://arxiv.org/abs/2505.14669) 
 
-Currently, this repository is work in progress. We provide code for reproducing the accuracy experiments, and will release kernels for the performance experiments at a later time. 
+Currently, this repository is work in progress. We provide code for reproducing the accuracy experiments, and will release kernels for the performance experiments at a later time.
+
+This work was presented at the GPU MODE lecture cycle [![YouTube](https://img.shields.io/badge/YouTube-%23FF0000.svg?style=for-the-badge&logo=YouTube&logoColor=white)](https://www.youtube.com/watch?v=XVo17Q7YapA)
 
 ## Quickstart 
 
