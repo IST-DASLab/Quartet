@@ -35,6 +35,10 @@ The above command trains a 30M parameters model with the Llama-style architectur
 
 Quartet kernels are released as part of the [QuTLASS](https://github.com/IST-DASLab/qutlass) library and the [FP-Quant](https://github.com/IST-DASLab/FP-Quant) training/inference addon to [`transformers`](https://huggingface.co/docs/transformers/main/en/quantization/fp_quant) and [`vLLM`](https://github.com/vllm-project/vllm/pull/24440).
 
+To measure the speedups on RTX 5090, install [this QuTLASS commit](https://github.com/IST-DASLab/qutlass/commit/66e0d48acb35dba35d6653e86955566a458b7d3d) and run [this notebook](notebooks/benchmark_mxfp4.ipynb).
+
+QuTLASS also provides certain kernels for B200 and we're working on a B300 implementation as well.
+
 ## Cite This Work
 ```
 @misc{castro2025quartetnativefp4training,
