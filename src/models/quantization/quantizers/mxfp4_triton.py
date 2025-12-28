@@ -51,7 +51,12 @@ def mxfp4_forward_kernel(
     if quest:
         mean_squared = tl.sum(x_had_grouped * x_had_grouped, axis=-1, keep_dims=True) / group_size
         mean = tl.sum(x_had_grouped, axis=-1, keep_dims=True) / group_size
-        std = tl.sqrt(mean_squared - mean * mean)
+        var = mean_squared - mean * mean
+        std = tl.where(
+            var >= 0,
+            tl.sqrt(mean_squared - mean * mean),
+            1.0,
+        )
         scales = gaussian_scale * std + 1e-8
         shared_exps = tl.exp2(tl.floor(tl.log2(scales)))
         x_had_scaled = x_had_grouped / shared_exps
