@@ -51,13 +51,13 @@ class AlbertTsengQuantizer(BaseQuantizer):
 
     def re_randomize(self):
         if self.rerotate == "signs":
-            self.hadamard_matrix = self.hadamard_matrix @ torch.diag(
+            self.hadamard_matrix = torch.diag(
                 torch.randint(
                     0, 2, (self.hadamard_dim,),
                     device=self.hadamard_matrix.device,
                     dtype=self.hadamard_matrix.dtype
                 ) * 2 - 1
-            )
+            ) @ self.hadamard_matrix
         elif self.rerotate == "O32":
             gaussian_matrix = torch.randn(self.hadamard_dim, self.hadamard_dim, device=self.hadamard_matrix.device, dtype=self.hadamard_matrix.dtype)
             svd = torch.linalg.svd(gaussian_matrix)
@@ -126,14 +126,14 @@ class AlignedAlbertTsengQuantizer(BaseQuantizer):
 
 class QuestMXFP4QuantizerFn(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, x, hadamard_matrix):
+    def forward(ctx, x, hadamard_matrix, mult):
         x_dequantized, mask = mxfp4_forward_kernel_wrapper(
             x,
             hadamard_matrix,
             return_clip_mask=True,
             stochastic_round=False,
             quest=True,
-            gaussian_scale=2.92247856 / 6.0,
+            gaussian_scale=2.92247856 / 6.0 * mult,
         )
         ctx.save_for_backward(hadamard_matrix, mask)
         ctx.x_shape = x.shape
@@ -147,7 +147,7 @@ class QuestMXFP4QuantizerFn(torch.autograd.Function):
     
 
 class QuestMXFP4Quantizer(BaseQuantizer):
-    def __init__(self, hadamard_dim=32, rerotate=None):
+    def __init__(self, hadamard_dim=32, rerotate=None, mult=1.0):
         super().__init__(4)
         
         self.hadamard_dim = hadamard_dim
@@ -155,20 +155,21 @@ class QuestMXFP4Quantizer(BaseQuantizer):
             torch.eye(hadamard_dim, dtype=torch.float32, device="cuda"), scale=hadamard_dim**-0.5
         )
         self.rerotate = rerotate
+        self.mult = mult
 
     def forward(self, x):
         self.hadamard_matrix = self.hadamard_matrix.to(x.device).to(x.dtype)
-        return QuestMXFP4QuantizerFn.apply(x, self.hadamard_matrix)
+        return QuestMXFP4QuantizerFn.apply(x, self.hadamard_matrix, self.mult)
 
     def re_randomize(self):
         if self.rerotate == "signs":
-            self.hadamard_matrix = self.hadamard_matrix @ torch.diag(
+            self.hadamard_matrix = torch.diag(
                 torch.randint(
                     0, 2, (self.hadamard_dim,),
                     device=self.hadamard_matrix.device,
                     dtype=self.hadamard_matrix.dtype
                 ) * 2 - 1
-            )
+            ) @ self.hadamard_matrix
         elif self.rerotate == "O32":
             gaussian_matrix = torch.randn(self.hadamard_dim, self.hadamard_dim, device=self.hadamard_matrix.device, dtype=self.hadamard_matrix.dtype)
             svd = torch.linalg.svd(gaussian_matrix)
