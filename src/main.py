@@ -18,6 +18,11 @@ from optim.base import train
 from optim.utils import cos_inf_schedule, wsd_schedule
 
 
+def print0(*args, **kwargs):
+    if torch.distributed.get_rank() == 0:
+        print(*args, **kwargs)
+
+
 def main(args):
     distributed_backend = distributed.make_backend_from_args(args)
     args = distributed_backend.get_adjusted_args_for_process(args)
@@ -49,16 +54,16 @@ def main(args):
         wandb.define_metric("val/*", step_metric="iter")
         wandb.define_metric("lr", step_metric="iter")
 
-    print(f"Starting Experiment: {exp_name}")
-    print(f"Experiment Directory: {exp_dir}")
-    print(f"Config:\n{vars(args)}\n")
+    print0(f"Starting Experiment: {exp_name}")
+    print0(f"Experiment Directory: {exp_dir}")
+    print0(f"Config:\n{vars(args)}\n")
 
-    print(f"Loading dataset: '{args.dataset}'")
+    print0(f"Loading dataset: '{args.dataset}'")
     datareaders = get_data_readers(args)
 
     model = get_model(args).to(args.device)
     # TODO: take care of initializing the model if args.use_pretrained != 'none'
-    print(f"\nModel:\n{model}")
+    print0(f"\nModel:\n{model}")
 
     model = distributed_backend.transform_model(model)
     group_specs = distributed_backend.get_raw_model(model).get_parameter_group_specs()
@@ -79,9 +84,9 @@ def main(args):
         - distributed_backend.get_raw_model(model).lm_head.weight.numel()
         - distributed_backend.get_raw_model(model).transformer.wte.weight.numel()
     )
-    print("number of parameters: %.2fM" % (params_cnt / 1e6,))
-    print("number of optimized parameters: %.2fM" % (optimized_params_cnt / 1e6,))
-    print("number of non-embedding parameters: %.2fM" % (nonemb_param_cnt / 1e6,))
+    print0("number of parameters: %.2fM" % (params_cnt / 1e6,))
+    print0("number of optimized parameters: %.2fM" % (optimized_params_cnt / 1e6,))
+    print0("number of non-embedding parameters: %.2fM" % (nonemb_param_cnt / 1e6,))
     if args.wandb and distributed_backend.is_master_process():
         wandb.log(
             {
@@ -111,7 +116,7 @@ def main(args):
         opt = torch.optim.SGD(
             group_specs, lr=args.lr, momentum=0.9, weight_decay=args.weight_decay
         )
-    print(f"\nOptimizer:\n{opt}")
+    print0(f"\nOptimizer:\n{opt}")
 
     if args.scheduler != "none":
         assert args.warmup_steps < args.iterations, "Warmup steps must be < iterations."
@@ -160,6 +165,7 @@ def main(args):
                 + "Otherwise, specify a different experiment name. "
             )
         else:
+            print0(f"Found checkpoint in {str(exp_dir / 'ckpts' / 'latest')}. Loading it automatically.")
             # Auto resume overwrites resume_from
             args.resume_from = str(exp_dir / "ckpts" / "latest")
 
@@ -262,8 +268,8 @@ def get_data_readers(args, verbose=True):
     )
 
     if verbose:
-        print(f"Num training tokens: {train_reader.num_tokens}")
-        print(f"Num validation tokens: {val_reader.num_tokens}")
+        print0(f"Num training tokens: {train_reader.num_tokens}")
+        print0(f"Num validation tokens: {val_reader.num_tokens}")
 
     return {
         "train": train_reader,
