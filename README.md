@@ -6,6 +6,8 @@ This is the official code for the Quartet FP4 training paper [![arXiv](https://i
 
 **[UPDATE 28.09.25]:** Check out our [latest work on MXFP4/NVFP4 for PTQ](https://arxiv.org/abs/2509.23202).
 
+**[UPDATE 18.03.26]:** Quartet II released. [Github](https://github.com/IST-DASLab/Quartet-II). [arXiv](https://arxiv.org/abs/2601.22813).
+
 This work was presented at the GPU MODE lecture cycle [![YouTube](https://img.shields.io/badge/YouTube-%23FF0000.svg?style=for-the-badge&logo=YouTube&logoColor=white)](https://www.youtube.com/watch?v=XVo17Q7YapA)
 
 ## Quickstart 
